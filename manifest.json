@@ -3,6 +3,9 @@
 	"name": "Mistral TTS",
 	"version": "0.1.0",
 	"minAppVersion": "1.0.0",
-	"author": "MC",
-	"description": "Text-to-speech using Mistral Voxtral with voice cloning support"
+	"author": "Maria Cecilia Espina",
+	"authorUrl": "https://github.com/mcmespinaa",
+	"description": "Text-to-speech using Mistral Voxtral with voice cloning, streaming playback, and system voices fallback",
+	"isDesktopOnly": false,
+	"fundingUrl": "https://buymeacoffee.com/mcmespinaa"
 }
