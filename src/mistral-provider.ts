@@ -477,6 +477,52 @@ export class MistralProvider implements TTSProvider {
 		return voice as MistralVoice;
 	}
 
+	/** Generate and play a short preview for a specific voice. */
+	async previewVoice(voiceId: string): Promise<void> {
+		this.stop();
+		const s = this.settings();
+
+		let response;
+		try {
+			response = await requestUrl({
+				url: `${API_BASE}/audio/speech`,
+				method: "POST",
+				headers: {
+					Authorization: `Bearer ${s.apiKey}`,
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify({
+					model: MODEL,
+					input: "Hello! This is a preview of how I sound. Nice to meet you.",
+					voice_id: voiceId,
+					response_format: "mp3",
+				}),
+			});
+		} catch (e: unknown) {
+			const status = (e as Record<string, unknown>)?.status ?? "unknown";
+			throw new Error(`Preview failed (${status})`);
+		}
+
+		const audioBase64 = response.json?.audio_data;
+		if (typeof audioBase64 !== "string") {
+			throw new Error("No audio in preview response");
+		}
+
+		const data = base64ToUint8Array(audioBase64);
+		const safeBuffer = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer;
+		const blob = new Blob([safeBuffer], { type: "audio/mpeg" });
+		const url = URL.createObjectURL(blob);
+
+		this.stop();
+		this.currentObjectUrl = url;
+		this.currentAudio = new Audio(url);
+		this.currentAudio.addEventListener("ended", () => {
+			URL.revokeObjectURL(url);
+			this.currentObjectUrl = null;
+		});
+		this.currentAudio.play().catch(() => {});
+	}
+
 	async deleteVoice(voiceId: string): Promise<void> {
 		await requestUrl({
 			url: `${API_BASE}/audio/voices/${voiceId}`,

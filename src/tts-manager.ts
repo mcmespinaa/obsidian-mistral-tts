@@ -72,4 +72,8 @@ export class TTSManager {
 	async deleteMistralVoice(id: string): Promise<void> {
 		return this.mistral.deleteVoice(id);
 	}
+
+	async previewMistralVoice(id: string): Promise<void> {
+		return this.mistral.previewVoice(id);
+	}
 }

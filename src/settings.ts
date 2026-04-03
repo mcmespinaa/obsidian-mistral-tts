@@ -387,6 +387,21 @@ export class TTSSettingTab extends PluginSettingTab {
 					)
 					.addButton((btn) =>
 						btn
+							.setButtonText("Preview")
+							.setIcon("play")
+							.onClick(async () => {
+								try {
+									btn.setButtonText("...");
+									await this.plugin.ttsManager.previewMistralVoice(voice.id);
+									btn.setButtonText("Preview");
+								} catch (e) {
+									new Notice(`Preview failed: ${(e as Error).message}`);
+									btn.setButtonText("Preview");
+								}
+							})
+					)
+					.addButton((btn) =>
+						btn
 							.setButtonText(isActive ? "Selected" : "Use")
 							.setDisabled(isActive)
 							.onClick(async () => {
