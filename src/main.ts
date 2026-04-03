@@ -8,32 +8,35 @@ import {
 	normalizePath,
 } from "obsidian";
 import {
-	MistralTTSSettings,
+	PluginSettings,
 	DEFAULT_SETTINGS,
-	MistralTTSSettingTab,
+	TTSSettingTab,
 } from "./settings";
-import { TTSEngine } from "./tts-engine";
+import { TTSManager } from "./tts-manager";
 import { PlayerUI } from "./player-ui";
 
 export default class MistralTTSPlugin extends Plugin {
-	settings: MistralTTSSettings = DEFAULT_SETTINGS;
-	ttsEngine!: TTSEngine;
+	settings: PluginSettings = DEFAULT_SETTINGS;
+	ttsManager!: TTSManager;
 	private playerUI!: PlayerUI;
 	private isSpeaking = false;
 
 	async onload() {
 		await this.loadSettings();
 
-		this.ttsEngine = new TTSEngine(
+		this.ttsManager = new TTSManager(
 			() => this.settings,
 			(state) => this.playerUI.update(state)
 		);
 
 		this.playerUI = new PlayerUI(
 			() => this.togglePauseResume(),
-			() => this.ttsEngine.stop()
+			() => this.ttsManager.stop()
 		);
 		this.playerUI.attach(this);
+
+		// Apply initial engine from saved settings
+		this.applyEngine();
 
 		// ── Ribbon Icon ────────────────────────────────────────────
 		this.addRibbonIcon("volume-2", "Read note aloud", async () => {
@@ -77,7 +80,7 @@ export default class MistralTTSPlugin extends Plugin {
 		this.addCommand({
 			id: "stop",
 			name: "Stop playback",
-			callback: () => this.ttsEngine.stop(),
+			callback: () => this.ttsManager.stop(),
 		});
 
 		// ── Context Menus ──────────────────────────────────────────
@@ -101,7 +104,7 @@ export default class MistralTTSPlugin extends Plugin {
 		);
 
 		this.registerEvent(
-			// @ts-expect-error -- Obsidian types don't always expose file-menu
+			// @ts-ignore -- file-menu not in all Obsidian type versions
 			this.app.workspace.on("file-menu", (menu: Menu, file: TFile) => {
 				if (file.extension === "md") {
 					menu.addItem((item) => {
@@ -121,23 +124,34 @@ export default class MistralTTSPlugin extends Plugin {
 		);
 
 		// ── Settings Tab ───────────────────────────────────────────
-		this.addSettingTab(new MistralTTSSettingTab(this.app, this));
+		this.addSettingTab(new TTSSettingTab(this.app, this));
 	}
 
 	onunload() {
-		this.ttsEngine.stop();
+		this.ttsManager.stop();
+	}
+
+	/** Switch active engine and apply per-engine settings. Called from settings tab. */
+	applyEngine() {
+		this.ttsManager.setEngine(this.settings.engine);
+		// Apply SpeechSynth-specific settings
+		this.ttsManager.speechSynth.setVoice(this.settings.speechSynthVoice);
+		this.ttsManager.speechSynth.setRate(this.settings.speechSynthRate);
 	}
 
 	// ── Core Speak Method ──────────────────────────────────────────
 
 	private async speakText(text: string) {
-		if (!this.settings.apiKey) {
-			new Notice("Set your Mistral API key in Mistral TTS settings");
-			return;
-		}
-		if (!this.settings.voiceId) {
-			new Notice("Select or create a voice in Mistral TTS settings");
-			return;
+		// Validate engine-specific requirements
+		if (this.settings.engine === "mistral") {
+			if (!this.settings.apiKey) {
+				new Notice("Set your Mistral API key in TTS settings");
+				return;
+			}
+			if (!this.settings.voiceId) {
+				new Notice("Select or create a voice in TTS settings");
+				return;
+			}
 		}
 		if (!text.trim()) {
 			new Notice("No text to read");
@@ -146,29 +160,28 @@ export default class MistralTTSPlugin extends Plugin {
 
 		// Guard against concurrent speak requests
 		if (this.isSpeaking) {
-			this.ttsEngine.stop();
+			this.ttsManager.stop();
 		}
 		this.isSpeaking = true;
 
 		try {
-			let audioData: Uint8Array;
-
-			if (this.settings.streaming) {
-				audioData = await this.ttsEngine.speakStreaming(text);
-			} else {
-				audioData = await this.ttsEngine.speak(text);
-			}
+			const result = await this.ttsManager.speak(text);
 
 			// Save independently -- don't let save failures kill playback
-			if (this.settings.saveToVault && audioData.length > 0) {
+			if (
+				this.settings.saveToVault &&
+				this.ttsManager.canSaveAudio &&
+				result.audioData &&
+				result.audioData.length > 0
+			) {
 				try {
-					await this.saveAudio(audioData);
+					await this.saveAudio(result.audioData, result.format);
 				} catch (e) {
 					new Notice(`Audio plays fine but could not save: ${(e as Error).message}`);
 				}
 			}
 		} catch (e) {
-			this.ttsEngine.stop();
+			this.ttsManager.stop();
 			new Notice(`TTS error: ${(e as Error).message}`);
 		} finally {
 			this.isSpeaking = false;
@@ -177,17 +190,16 @@ export default class MistralTTSPlugin extends Plugin {
 
 	// ── Save Audio to Vault ────────────────────────────────────────
 
-	private async saveAudio(data: Uint8Array) {
+	private async saveAudio(data: Uint8Array, format: string) {
 		const activeFile = this.app.workspace.getActiveFile();
 		if (!activeFile) {
 			new Notice("Could not save audio: no active note");
 			return;
 		}
 
-		const ext = this.settings.streaming ? "pcm" : this.settings.responseFormat;
 		const baseName = activeFile.basename;
 		const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-		const fileName = `${baseName}_${timestamp}.${ext}`;
+		const fileName = `${baseName}_${timestamp}.${format}`;
 
 		let folderPath: string;
 		if (this.settings.saveLocation === "next-to-note") {
@@ -214,7 +226,6 @@ export default class MistralTTSPlugin extends Plugin {
 			}
 		}
 
-		// Slice to avoid writing from a shared ArrayBuffer
 		const safeBuffer = data.buffer.slice(
 			data.byteOffset,
 			data.byteOffset + data.byteLength
@@ -226,10 +237,10 @@ export default class MistralTTSPlugin extends Plugin {
 	// ── Helpers ────────────────────────────────────────────────────
 
 	private togglePauseResume() {
-		if (this.ttsEngine.state === "playing") {
-			this.ttsEngine.pause();
-		} else if (this.ttsEngine.state === "paused") {
-			this.ttsEngine.resume();
+		if (this.ttsManager.state === "playing") {
+			this.ttsManager.pause();
+		} else if (this.ttsManager.state === "paused") {
+			this.ttsManager.resume();
 		}
 	}
 
@@ -265,7 +276,7 @@ function stripMarkdown(text: string): string {
 			.replace(/(\*{1,3}|_{1,3})(.*?)\1/g, "$2")
 			// Remove inline code
 			.replace(/`([^`]+)`/g, "$1")
-			// Remove images (before links, since ![alt](url) partially matches link regex)
+			// Remove images (before links)
 			.replace(/!\[([^\]]*)\]\([^)]+\)/g, "")
 			// Remove links, keep text
 			.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")

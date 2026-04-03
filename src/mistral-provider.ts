@@ -3,12 +3,17 @@ import type { MistralTTSSettings } from "./settings";
 import type {
 	MistralVoice,
 	PlaybackState,
+	TTSProvider,
+	TTSResult,
 } from "./types";
 
 const API_BASE = "https://api.mistral.ai/v1";
 const MODEL = "voxtral-mini-tts-2603";
 
-export class TTSEngine {
+export class MistralProvider implements TTSProvider {
+	readonly name = "Mistral Voxtral";
+	readonly canSaveAudio = true;
+
 	private settings: () => MistralTTSSettings;
 	private currentAudio: HTMLAudioElement | null = null;
 	private currentObjectUrl: string | null = null;
@@ -17,14 +22,10 @@ export class TTSEngine {
 	private playQueue: Uint8Array[] = [];
 	private pcmCarry = new Uint8Array(0);
 	private _state: PlaybackState = "idle";
-	private onStateChange: (state: PlaybackState) => void;
+	private _onStateChange: (state: PlaybackState) => void = () => {};
 
-	constructor(
-		getSettings: () => MistralTTSSettings,
-		onStateChange: (state: PlaybackState) => void
-	) {
+	constructor(getSettings: () => MistralTTSSettings) {
 		this.settings = getSettings;
-		this.onStateChange = onStateChange;
 	}
 
 	get state(): PlaybackState {
@@ -33,7 +34,7 @@ export class TTSEngine {
 
 	private setState(state: PlaybackState) {
 		this._state = state;
-		this.onStateChange(state);
+		this._onStateChange(state);
 	}
 
 	// ── Text Chunking ──────────────────────────────────────────────
@@ -60,7 +61,16 @@ export class TTSEngine {
 
 	// ── Non-Streaming TTS ──────────────────────────────────────────
 
-	async speak(text: string): Promise<Uint8Array> {
+	async speak(text: string, onStateChange: (s: PlaybackState) => void): Promise<TTSResult> {
+		this._onStateChange = onStateChange;
+
+		if (this.settings().streaming) {
+			return this.speakStreaming(text);
+		}
+		return this.speakNonStreaming(text);
+	}
+
+	private async speakNonStreaming(text: string): Promise<TTSResult> {
 		this.stop();
 		this.setState("loading");
 		this.playQueue = [];
@@ -81,7 +91,6 @@ export class TTSEngine {
 			if (i === 0) {
 				this.playBuffer(buffer);
 			} else {
-				// Queue remaining chunks for sequential playback
 				this.playQueue.push(buffer);
 			}
 		}
@@ -95,9 +104,10 @@ export class TTSEngine {
 			offset += buf.length;
 		}
 
-		return combined;
+		return { audioData: combined, format: this.settings().responseFormat };
 	}
 
+	/** Non-streaming generation for a single chunk */
 	private async generateChunk(text: string): Promise<Uint8Array> {
 		const s = this.settings();
 		const body: Record<string, unknown> = {
@@ -143,7 +153,7 @@ export class TTSEngine {
 
 	// ── Streaming TTS ──────────────────────────────────────────────
 
-	async speakStreaming(text: string): Promise<Uint8Array> {
+	private async speakStreaming(text: string): Promise<TTSResult> {
 		this.stop();
 		this.setState("loading");
 		this.pcmCarry = new Uint8Array(0);
@@ -291,7 +301,7 @@ export class TTSEngine {
 			offset += chunk.length;
 		}
 
-		return combined;
+		return { audioData: combined, format: "pcm" };
 	}
 
 	private scheduleChunk(

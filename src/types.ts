@@ -60,5 +60,34 @@ export interface MistralStreamDone {
 
 export type MistralStreamEvent = MistralStreamDelta | MistralStreamDone;
 
-// Plugin internal types
+// ── Plugin internal types ──────────────────────────────────────────
+
 export type PlaybackState = "idle" | "loading" | "playing" | "paused";
+export type EngineType = "mistral" | "kokoro" | "speech-synth";
+
+/** Result of a TTS generation. audioData is null when engine plays directly (SpeechSynthesis). */
+export interface TTSResult {
+	audioData: Uint8Array | null;
+	format: string;
+}
+
+/** Common interface all TTS engines implement */
+export interface TTSProvider {
+	readonly name: string;
+	readonly canSaveAudio: boolean;
+
+	speak(text: string, onStateChange: (s: PlaybackState) => void): Promise<TTSResult>;
+	pause(): void;
+	resume(): void;
+	stop(): void;
+
+	readonly state: PlaybackState;
+}
+
+/** Voice info for settings UI */
+export interface VoiceInfo {
+	id: string;
+	name: string;
+	language?: string;
+	gender?: string;
+}
