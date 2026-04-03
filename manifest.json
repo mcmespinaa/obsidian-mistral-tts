@@ -1,0 +1,8 @@
+{
+	"id": "mistral-tts",
+	"name": "Mistral TTS",
+	"version": "0.1.0",
+	"minAppVersion": "1.0.0",
+	"author": "MC",
+	"description": "Text-to-speech using Mistral Voxtral with voice cloning support"
+}
