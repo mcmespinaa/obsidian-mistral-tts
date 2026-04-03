@@ -14,12 +14,12 @@ import {
 } from "./settings";
 import { TTSEngine } from "./tts-engine";
 import { PlayerUI } from "./player-ui";
-import type { PlaybackState } from "./types";
 
 export default class MistralTTSPlugin extends Plugin {
 	settings: MistralTTSSettings = DEFAULT_SETTINGS;
-	ttsEngine: TTSEngine;
-	private playerUI: PlayerUI;
+	ttsEngine!: TTSEngine;
+	private playerUI!: PlayerUI;
+	private isSpeaking = false;
 
 	async onload() {
 		await this.loadSettings();
@@ -101,14 +101,19 @@ export default class MistralTTSPlugin extends Plugin {
 		);
 
 		this.registerEvent(
+			// @ts-expect-error -- Obsidian types don't always expose file-menu
 			this.app.workspace.on("file-menu", (menu: Menu, file: TFile) => {
 				if (file.extension === "md") {
 					menu.addItem((item) => {
 						item.setTitle("Read file aloud")
 							.setIcon("volume-2")
 							.onClick(async () => {
-								const content = await this.app.vault.read(file);
-								await this.speakText(stripMarkdown(content));
+								try {
+									const content = await this.app.vault.read(file);
+									await this.speakText(stripMarkdown(content));
+								} catch (e) {
+									new Notice(`Could not read file: ${(e as Error).message}`);
+								}
 							});
 					});
 				}
@@ -139,6 +144,12 @@ export default class MistralTTSPlugin extends Plugin {
 			return;
 		}
 
+		// Guard against concurrent speak requests
+		if (this.isSpeaking) {
+			this.ttsEngine.stop();
+		}
+		this.isSpeaking = true;
+
 		try {
 			let audioData: Uint8Array;
 
@@ -148,12 +159,19 @@ export default class MistralTTSPlugin extends Plugin {
 				audioData = await this.ttsEngine.speak(text);
 			}
 
+			// Save independently -- don't let save failures kill playback
 			if (this.settings.saveToVault && audioData.length > 0) {
-				await this.saveAudio(audioData);
+				try {
+					await this.saveAudio(audioData);
+				} catch (e) {
+					new Notice(`Audio plays fine but could not save: ${(e as Error).message}`);
+				}
 			}
 		} catch (e) {
 			this.ttsEngine.stop();
 			new Notice(`TTS error: ${(e as Error).message}`);
+		} finally {
+			this.isSpeaking = false;
 		}
 	}
 
@@ -161,7 +179,10 @@ export default class MistralTTSPlugin extends Plugin {
 
 	private async saveAudio(data: Uint8Array) {
 		const activeFile = this.app.workspace.getActiveFile();
-		if (!activeFile) return;
+		if (!activeFile) {
+			new Notice("Could not save audio: no active note");
+			return;
+		}
 
 		const ext = this.settings.streaming ? "pcm" : this.settings.responseFormat;
 		const baseName = activeFile.basename;
@@ -175,9 +196,15 @@ export default class MistralTTSPlugin extends Plugin {
 			folderPath = this.settings.audioFolder;
 		}
 
-		const fullPath = normalizePath(
+		// Reject path traversal attempts
+		const normalized = normalizePath(
 			folderPath ? `${folderPath}/${fileName}` : fileName
 		);
+		if (normalized.startsWith("..") || normalized.contains("/../")) {
+			new Notice("Invalid audio folder path");
+			return;
+		}
+		const fullPath = normalized;
 
 		// Ensure folder exists
 		if (folderPath) {
@@ -187,7 +214,12 @@ export default class MistralTTSPlugin extends Plugin {
 			}
 		}
 
-		await this.app.vault.createBinary(fullPath, data.buffer as ArrayBuffer);
+		// Slice to avoid writing from a shared ArrayBuffer
+		const safeBuffer = data.buffer.slice(
+			data.byteOffset,
+			data.byteOffset + data.byteLength
+		) as ArrayBuffer;
+		await this.app.vault.createBinary(fullPath, safeBuffer);
 		new Notice(`Audio saved: ${fileName}`);
 	}
 
@@ -210,7 +242,11 @@ export default class MistralTTSPlugin extends Plugin {
 	}
 
 	async saveSettings() {
-		await this.saveData(this.settings);
+		try {
+			await this.saveData(this.settings);
+		} catch (e) {
+			new Notice(`Failed to save settings: ${(e as Error).message}`);
+		}
 	}
 }
 
@@ -221,20 +257,20 @@ function stripMarkdown(text: string): string {
 		text
 			// Remove YAML frontmatter
 			.replace(/^---[\s\S]*?---\n?/, "")
+			// Remove code blocks
+			.replace(/```[\s\S]*?```/g, "")
 			// Remove headings markers
 			.replace(/^#{1,6}\s+/gm, "")
 			// Remove bold/italic markers
 			.replace(/(\*{1,3}|_{1,3})(.*?)\1/g, "$2")
 			// Remove inline code
 			.replace(/`([^`]+)`/g, "$1")
-			// Remove code blocks
-			.replace(/```[\s\S]*?```/g, "")
+			// Remove images (before links, since ![alt](url) partially matches link regex)
+			.replace(/!\[([^\]]*)\]\([^)]+\)/g, "")
 			// Remove links, keep text
 			.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
-			// Remove images
-			.replace(/!\[([^\]]*)\]\([^)]+\)/g, "$1")
 			// Remove wiki links
-			.replace(/\[\[([^\]|]+)(\|([^\]]+))?\]\]/g, "$3$1")
+			.replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (_, page, alias) => alias || page)
 			// Remove HTML tags
 			.replace(/<[^>]+>/g, "")
 			// Remove blockquotes marker

@@ -1,6 +1,5 @@
-import { App, PluginSettingTab, Setting, Notice, TextComponent } from "obsidian";
+import { App, PluginSettingTab, Setting, Notice } from "obsidian";
 import type MistralTTSPlugin from "./main";
-import type { MistralVoice } from "./types";
 
 export interface MistralTTSSettings {
 	apiKey: string;
@@ -68,14 +67,15 @@ export class MistralTTSSettingTab extends PluginSettingTab {
 					: "No voice selected. Create or select one below."
 			);
 
+		// Voice list container (must be created before button references it)
+		const voiceListEl = containerEl.createDiv("mistral-tts-voice-list");
+
 		voiceSetting.addButton((btn) =>
 			btn.setButtonText("Refresh voices").onClick(async () => {
-				await this.renderVoiceList(containerEl);
+				await this.renderVoiceList(voiceListEl);
 			})
 		);
 
-		// Voice list container
-		const voiceListEl = containerEl.createDiv("mistral-tts-voice-list");
 		this.renderVoiceList(voiceListEl);
 
 		// Clone voice section
