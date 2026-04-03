@@ -33,10 +33,11 @@ export interface MistralVoiceCreateRequest {
 }
 
 export interface MistralVoiceListResponse {
-	data: MistralVoice[];
+	items: MistralVoice[];
 	total: number;
-	offset: number;
-	limit: number;
+	page: number;
+	page_size: number;
+	total_pages: number;
 }
 
 // SSE streaming events

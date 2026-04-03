@@ -431,10 +431,11 @@ export class TTSEngine {
 			},
 		});
 		const body = response.json;
-		if (!body?.data || !Array.isArray(body.data)) {
+		const voices = body?.items ?? body?.data;
+		if (!Array.isArray(voices)) {
 			throw new Error("Unexpected response from Mistral Voices API");
 		}
-		return body.data as MistralVoice[];
+		return voices as MistralVoice[];
 	}
 
 	async createVoice(name: string, audioFile: File): Promise<MistralVoice> {
