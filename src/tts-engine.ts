@@ -424,7 +424,7 @@ export class TTSEngine {
 
 	async listVoices(): Promise<MistralVoice[]> {
 		const response = await requestUrl({
-			url: `${API_BASE}/voices`,
+			url: `${API_BASE}/audio/voices`,
 			method: "GET",
 			headers: {
 				Authorization: `Bearer ${this.settings().apiKey}`,
@@ -446,7 +446,7 @@ export class TTSEngine {
 		const base64Audio = uint8ArrayToBase64(new Uint8Array(arrayBuffer));
 
 		const response = await requestUrl({
-			url: `${API_BASE}/voices`,
+			url: `${API_BASE}/audio/voices`,
 			method: "POST",
 			headers: {
 				Authorization: `Bearer ${this.settings().apiKey}`,
@@ -468,7 +468,7 @@ export class TTSEngine {
 
 	async deleteVoice(voiceId: string): Promise<void> {
 		await requestUrl({
-			url: `${API_BASE}/voices/${voiceId}`,
+			url: `${API_BASE}/audio/voices/${voiceId}`,
 			method: "DELETE",
 			headers: {
 				Authorization: `Bearer ${this.settings().apiKey}`,
