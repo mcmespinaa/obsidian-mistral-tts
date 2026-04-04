@@ -94,9 +94,9 @@ export default class MistralTTSPlugin extends Plugin {
 						menu.addItem((item) => {
 							item.setTitle("Read aloud")
 								.setIcon("volume-2")
-								.onClick(() =>
-									this.speakText(stripMarkdown(selection))
-								);
+								.onClick(() => {
+									void this.speakText(stripMarkdown(selection));
+								});
 						});
 					}
 				}

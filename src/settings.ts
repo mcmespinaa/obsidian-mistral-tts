@@ -6,7 +6,6 @@ import { SpeechSynthProvider } from "./speech-synth-provider";
 // ── Settings Interface ─────────────────────────────────────────────
 
 export interface PluginSettings {
-	// Engine selection
 	engine: EngineType;
 
 	// Mistral settings
@@ -27,7 +26,6 @@ export interface PluginSettings {
 	audioFolder: string;
 }
 
-// Keep old name as alias for backward compatibility with MistralProvider import
 export type MistralTTSSettings = PluginSettings;
 
 export const DEFAULT_SETTINGS: PluginSettings = {
@@ -59,9 +57,6 @@ export class TTSSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 
-		containerEl.createEl("h2", { text: "TTS Settings" });
-
-		// ── Engine Selection ────────────────────────────────────────
 		new Setting(containerEl)
 			.setName("TTS engine")
 			.setDesc("Choose between cloud (Mistral Voxtral) or local (system voices)")
@@ -80,21 +75,19 @@ export class TTSSettingTab extends PluginSettingTab {
 					})
 			);
 
-		// ── Engine-specific settings ───────────────────────────────
 		if (this.plugin.settings.engine === "mistral") {
 			this.displayMistralSettings(containerEl);
 		} else {
 			this.displaySpeechSynthSettings(containerEl);
 		}
 
-		// ── Audio Output (shared) ──────────────────────────────────
 		this.displayAudioOutput(containerEl);
 	}
 
 	// ── Mistral Settings ───────────────────────────────────────────
 
 	private displayMistralSettings(containerEl: HTMLElement) {
-		containerEl.createEl("h3", { text: "Mistral API" });
+		new Setting(containerEl).setName("Mistral API").setHeading();
 
 		new Setting(containerEl)
 			.setName("API key")
@@ -110,8 +103,7 @@ export class TTSSettingTab extends PluginSettingTab {
 					});
 			});
 
-		// Voice section
-		containerEl.createEl("h3", { text: "Voice" });
+		new Setting(containerEl).setName("Voice").setHeading();
 
 		const voiceSetting = new Setting(containerEl)
 			.setName("Active voice")
@@ -129,14 +121,13 @@ export class TTSSettingTab extends PluginSettingTab {
 			})
 		);
 
-		this.renderMistralVoiceList(voiceListEl);
+		void this.renderMistralVoiceList(voiceListEl);
 
 		// Clone voice
-		containerEl.createEl("h3", { text: "Clone a voice" });
-		containerEl.createEl("p", {
-			text: "Upload a short audio sample (2-3 seconds) to create a custom voice.",
-			cls: "setting-item-description",
-		});
+		new Setting(containerEl).setName("Clone a voice").setHeading();
+		new Setting(containerEl).setDesc(
+			"Upload a short audio sample (2-3 seconds) to create a custom voice."
+		);
 
 		const cloneContainer = containerEl.createDiv("mistral-tts-clone");
 		let cloneName = "";
@@ -189,8 +180,7 @@ export class TTSSettingTab extends PluginSettingTab {
 				})
 		);
 
-		// Mistral playback options
-		containerEl.createEl("h3", { text: "Playback" });
+		new Setting(containerEl).setName("Playback").setHeading();
 
 		new Setting(containerEl)
 			.setName("Audio format")
@@ -238,16 +228,13 @@ export class TTSSettingTab extends PluginSettingTab {
 	// ── SpeechSynthesis Settings ───────────────────────────────────
 
 	private displaySpeechSynthSettings(containerEl: HTMLElement) {
-		containerEl.createEl("h3", { text: "System Voice" });
+		new Setting(containerEl).setName("System voice").setHeading();
+		new Setting(containerEl).setDesc(
+			"Uses your OS built-in voices. No API key needed, works offline. Audio cannot be saved to vault."
+		);
 
-		containerEl.createEl("p", {
-			text: "Uses your OS built-in voices. No API key needed, works offline. Audio cannot be saved to vault.",
-			cls: "setting-item-description",
-		});
-
-		// Voice picker
 		const voiceContainer = containerEl.createDiv();
-		this.renderSpeechSynthVoices(voiceContainer);
+		void this.renderSpeechSynthVoices(voiceContainer);
 
 		new Setting(containerEl)
 			.setName("Speech rate")
@@ -270,10 +257,7 @@ export class TTSSettingTab extends PluginSettingTab {
 		const voices = await SpeechSynthProvider.getVoices();
 
 		if (voices.length === 0) {
-			containerEl.createEl("p", {
-				text: "No system voices available.",
-				cls: "setting-item-description",
-			});
+			new Setting(containerEl).setDesc("No system voices available.");
 			return;
 		}
 
@@ -301,13 +285,12 @@ export class TTSSettingTab extends PluginSettingTab {
 	private displayAudioOutput(containerEl: HTMLElement) {
 		const canSave = this.plugin.ttsManager.canSaveAudio;
 
-		containerEl.createEl("h3", { text: "Audio Output" });
+		new Setting(containerEl).setName("Audio output").setHeading();
 
 		if (!canSave) {
-			containerEl.createEl("p", {
-				text: "Audio saving is not available with system voices (audio plays directly to speakers).",
-				cls: "setting-item-description",
-			});
+			new Setting(containerEl).setDesc(
+				"Audio saving is not available with system voices (audio plays directly to speakers)."
+			);
 			return;
 		}
 
@@ -359,20 +342,14 @@ export class TTSSettingTab extends PluginSettingTab {
 		containerEl.empty();
 
 		if (!this.plugin.settings.apiKey) {
-			containerEl.createEl("p", {
-				text: "Set your API key to see available voices.",
-				cls: "setting-item-description",
-			});
+			new Setting(containerEl).setDesc("Set your API key to see available voices.");
 			return;
 		}
 
 		try {
 			const voices = await this.plugin.ttsManager.listMistralVoices();
 			if (voices.length === 0) {
-				containerEl.createEl("p", {
-					text: "No saved voices. Clone one below.",
-					cls: "setting-item-description",
-				});
+				new Setting(containerEl).setDesc("No saved voices. Clone one below.");
 				return;
 			}
 
@@ -433,10 +410,7 @@ export class TTSSettingTab extends PluginSettingTab {
 					);
 			}
 		} catch (e) {
-			containerEl.createEl("p", {
-				text: `Error loading voices: ${(e as Error).message}`,
-				cls: "setting-item-description",
-			});
+			new Setting(containerEl).setDesc(`Error loading voices: ${(e as Error).message}`);
 		}
 	}
 }

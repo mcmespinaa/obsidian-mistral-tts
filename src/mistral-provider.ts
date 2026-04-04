@@ -43,7 +43,7 @@ export class MistralProvider implements TTSProvider {
 		const max = this.settings().maxChunkLength;
 		if (text.length <= max) return [text];
 
-		const sentences = text.split(/(?<=[.!?])\s+/);
+		const sentences = splitAfterPunctuation(text, /[.!?]\s+/);
 		const chunks: string[] = [];
 		let current = "";
 
@@ -136,7 +136,7 @@ export class MistralProvider implements TTSProvider {
 				body: JSON.stringify(body),
 			});
 		} catch (e: unknown) {
-			const status = (e as Record<string, unknown>)?.status ?? "unknown";
+			const status = String((e as Record<string, unknown>)?.status ?? "unknown");
 			const errBody = (e as Record<string, unknown>)?.text ?? (e as Error)?.message ?? "No details";
 			const msg = typeof errBody === "string" ? errBody.slice(0, 200) : String(errBody);
 			throw new Error(`Mistral API error (${status}): ${msg}`);
@@ -244,7 +244,7 @@ export class MistralProvider implements TTSProvider {
 					if (event.error) {
 						const errMsg = typeof event.error === "string"
 							? event.error
-							: (event.error as Record<string, unknown>)?.message || "Unknown stream error";
+							: String((event.error as Record<string, unknown>)?.message ?? "Unknown stream error");
 						throw new Error(`Mistral stream error: ${errMsg}`);
 					}
 
@@ -331,7 +331,7 @@ export class MistralProvider implements TTSProvider {
 		const ab = aligned.buffer.slice(
 			aligned.byteOffset,
 			aligned.byteOffset + aligned.byteLength
-		) as ArrayBuffer;
+		);
 		const float32 = new Float32Array(ab);
 		const audioBuffer = this.audioContext.createBuffer(1, float32.length, 24000);
 		audioBuffer.copyToChannel(float32, 0);
@@ -423,7 +423,7 @@ export class MistralProvider implements TTSProvider {
 			this.abortController = null;
 		}
 		if (this.audioContext) {
-			try { this.audioContext.close(); } catch { /* already closed */ }
+			void this.audioContext.close().catch(() => { /* already closed */ });
 			this.audioContext = null;
 		}
 		this.pcmCarry = new Uint8Array(0);
@@ -499,7 +499,7 @@ export class MistralProvider implements TTSProvider {
 				}),
 			});
 		} catch (e: unknown) {
-			const status = (e as Record<string, unknown>)?.status ?? "unknown";
+			const status = String((e as Record<string, unknown>)?.status ?? "unknown");
 			throw new Error(`Preview failed (${status})`);
 		}
 
@@ -557,4 +557,19 @@ function uint8ArrayToBase64(bytes: Uint8Array): string {
 		binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
 	}
 	return btoa(binary);
+}
+
+function splitAfterPunctuation(text: string, pattern: RegExp): string[] {
+	const results: string[] = [];
+	const globalPattern = new RegExp(pattern.source, "g");
+	let lastIndex = 0;
+	let match: RegExpExecArray | null;
+	while ((match = globalPattern.exec(text)) !== null) {
+		const end = match.index + match[0].length;
+		results.push(text.slice(lastIndex, end).trim());
+		lastIndex = end;
+	}
+	const tail = text.slice(lastIndex).trim();
+	if (tail) results.push(tail);
+	return results;
 }

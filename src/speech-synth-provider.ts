@@ -1,12 +1,7 @@
-import { Notice } from "obsidian";
 import type { PlaybackState, TTSProvider, TTSResult, VoiceInfo } from "./types";
 
 const MAX_UTTERANCE_LENGTH = 250;
 
-/**
- * Browser SpeechSynthesis API fallback.
- * Zero setup, works offline, but can't return audio data (plays directly to speakers).
- */
 export class SpeechSynthProvider implements TTSProvider {
 	readonly name = "System voices";
 	readonly canSaveAudio = false;
@@ -30,13 +25,8 @@ export class SpeechSynthProvider implements TTSProvider {
 		this._onStateChange(s);
 	}
 
-	setVoice(voiceName: string) {
-		this.voiceName = voiceName;
-	}
-
-	setRate(rate: number) {
-		this.rate = rate;
-	}
+	setVoice(voiceName: string) { this.voiceName = voiceName; }
+	setRate(rate: number) { this.rate = rate; }
 
 	async speak(text: string, onStateChange: (s: PlaybackState) => void): Promise<TTSResult> {
 		this._onStateChange = onStateChange;
@@ -48,7 +38,7 @@ export class SpeechSynthProvider implements TTSProvider {
 			throw new Error("SpeechSynthesis not available in this environment");
 		}
 
-		const voice = await this.resolveVoice();
+		const voice = this.resolveVoice();
 		const sentences = splitForSpeechSynth(text);
 
 		if (sentences.length === 0) {
@@ -115,7 +105,6 @@ export class SpeechSynthProvider implements TTSProvider {
 		this.setState("idle");
 	}
 
-	/** Get available system voices. Handles the Chrome/Electron async voice loading quirk. */
 	static async getVoices(): Promise<VoiceInfo[]> {
 		const synth = window.speechSynthesis;
 		if (!synth) return [];
@@ -126,13 +115,11 @@ export class SpeechSynthProvider implements TTSProvider {
 				resolve(voices);
 				return;
 			}
-			// Chrome/Electron: voices load async
 			const handler = () => {
 				synth.removeEventListener("voiceschanged", handler);
 				resolve(synth.getVoices());
 			};
 			synth.addEventListener("voiceschanged", handler);
-			// Timeout fallback in case event never fires
 			setTimeout(() => resolve(synth.getVoices()), 1000);
 		});
 
@@ -143,7 +130,7 @@ export class SpeechSynthProvider implements TTSProvider {
 		}));
 	}
 
-	private async resolveVoice(): Promise<SpeechSynthesisVoice | null> {
+	private resolveVoice(): SpeechSynthesisVoice | null {
 		const synth = window.speechSynthesis;
 		if (!synth) return null;
 
@@ -153,19 +140,16 @@ export class SpeechSynthProvider implements TTSProvider {
 	}
 }
 
-// ── Text splitting for SpeechSynthesis ─────────────────────────────
-
+// Split text without lookbehinds (iOS < 16.4 compatibility)
 function splitForSpeechSynth(text: string): string[] {
-	// Split by sentences first
-	const sentences = text.split(/(?<=[.!?])\s+/);
+	const sentences = splitAfterPunctuation(text, /[.!?]\s+/);
 	const chunks: string[] = [];
 
 	for (const sentence of sentences) {
 		if (sentence.length <= MAX_UTTERANCE_LENGTH) {
 			chunks.push(sentence);
 		} else {
-			// Long sentence: split at clause boundaries or word boundaries
-			const parts = sentence.split(/(?<=[,;:])\s+/);
+			const parts = splitAfterPunctuation(sentence, /[,;:]\s+/);
 			let current = "";
 			for (const part of parts) {
 				if ((current + " " + part).length > MAX_UTTERANCE_LENGTH && current) {
@@ -180,4 +164,21 @@ function splitForSpeechSynth(text: string): string[] {
 	}
 
 	return chunks.filter((c) => c.length > 0);
+}
+
+function splitAfterPunctuation(text: string, pattern: RegExp): string[] {
+	const results: string[] = [];
+	const globalPattern = new RegExp(pattern.source, "g");
+
+	let lastIndex = 0;
+	let match: RegExpExecArray | null;
+	while ((match = globalPattern.exec(text)) !== null) {
+		const end = match.index + match[0].length;
+		results.push(text.slice(lastIndex, end).trim());
+		lastIndex = end;
+	}
+	const tail = text.slice(lastIndex).trim();
+	if (tail) results.push(tail);
+
+	return results;
 }

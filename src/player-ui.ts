@@ -28,10 +28,8 @@ export class PlayerUI {
 	attach(plugin: Plugin) {
 		this.statusBarEl = plugin.addStatusBarItem();
 		this.statusBarEl.addClass("mistral-tts-status");
-		this.statusBarEl.style.cursor = "pointer";
 		this.update("idle");
 
-		// Left click: pause/resume, right click: stop
 		this.statusBarEl.addEventListener("click", () => this.onPauseResume());
 		this.statusBarEl.addEventListener("contextmenu", (e) => {
 			e.preventDefault();
@@ -44,11 +42,11 @@ export class PlayerUI {
 
 		if (state === "idle") {
 			this.statusBarEl.empty();
-			this.statusBarEl.style.display = "none";
+			this.statusBarEl.addClass("mistral-tts-hidden");
 			return;
 		}
 
-		this.statusBarEl.style.display = "";
+		this.statusBarEl.removeClass("mistral-tts-hidden");
 		this.statusBarEl.empty();
 		this.statusBarEl.setText(`${ICONS[state]} TTS: ${LABELS[state]}`);
 		this.statusBarEl.setAttribute("aria-label", LABELS[state]);
